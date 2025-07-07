@@ -1,44 +1,60 @@
 <?php
 
-$url = "https://www.cbn.gov.ng/Documents/circulars.html";
-$html = file_get_contents($url);
+// Create PDF folder
+if (!is_dir('pdfs')) mkdir('pdfs');
 
-// Create download folder
-$downloadDir = __DIR__ . '/downloads/';
-if (!is_dir($downloadDir)) {
-    mkdir($downloadDir, 0755, true);
-}
+// Get webpage
+$html = file_get_contents('https://www.cbn.gov.ng/Documents/circulars.html');
 
-preg_match_all('/<a[^>]+href=["\']([^"\']+\.pdf)["\'][^>]*>(.*?)<\/a>/i', $html, $matches);
+preg_match_all('/<a[^>]+href="([^"]*\.pdf)"[^>]*>([^<]+)<\/a>/i', $html, $matches);
 
-$data = [];
+$circulars = [];
+$count = 0;
 
+echo "Found " . count($matches[0]) . " PDFs\n";
+
+// Process each PDF link
 for ($i = 0; $i < count($matches[0]); $i++) {
-    $fileUrl = $matches[1][$i];
-    $title = strip_tags(trim($matches[2][$i]));
-
-    // Fix relative links
-    if (strpos($fileUrl, 'http') !== 0) {
-        $fileUrl = 'https://www.cbn.gov.ng' . $fileUrl;
+    $url = $matches[1][$i];
+    $title = trim(strip_tags($matches[2][$i]));
+    
+    if (empty($title)) continue;
+    
+    // Fix URL if relative
+    if (strpos($url, 'http') !== 0) {
+        $url = 'https://www.cbn.gov.ng' . $url;
     }
-
-    // Generate safe filename
-    $safeFileName = preg_replace('/\s+/', '-', strtolower($title)) . '.pdf';
-    $safeFileName = preg_replace('/[^a-zA-Z0-9\-\.]/', '', $safeFileName);
-
-    // Download PDF
-    $pdfContent = file_get_contents($fileUrl);
-    file_put_contents($downloadDir . $safeFileName, $pdfContent);
-
-    // Append to JSON data
-    $data[] = [
+    
+    // Clean filename
+    $filename = preg_replace('/[^a-zA-Z0-9\-_\.]/', '_', $title) . '.pdf';
+    
+    $circulars[] = [
+        'id' => ++$count,
         'title' => $title,
-        'file_name' => $safeFileName,
-        'file_url' => $fileUrl
+        'url' => $url,
+        'filename' => $filename
     ];
+    
+    echo "[$count] $title\n";
+    
+    // Download PDF
+    $pdf = file_get_contents($url);
+    if ($pdf) {
+        file_put_contents('pdfs/' . $filename, $pdf);
+        echo "Downloaded\n";
+    } else {
+        echo "Failed\n";
+    }
 }
 
-// Save to cbn_circulars.json
-file_put_contents('cbn_circulars.json', json_encode($data, JSON_PRETTY_PRINT));
+// Save JSON
+$json = [
+    'date' => date('Y-m-d H:i:s'),
+    'total' => count($circulars),
+    'circulars' => $circulars
+];
 
-echo "Done. Circulars saved in cbn_circulars.json\n";
+file_put_contents('cbn_circulars.json', json_encode($json, JSON_PRETTY_PRINT));
+
+echo "\nDone! Check 'pdfs/' folder and 'cbn_circulars.json'\n";
+?>
